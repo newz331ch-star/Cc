@@ -1,0 +1,171 @@
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+
+local localPlayer = Players.LocalPlayer
+local connection = nil
+local targetPlayer = nil
+
+-- ==========================================
+-- 🛠️ CREATE NEW UI MENU (SCROLLING LIST)
+-- ==========================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "HeadTeleportGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = localPlayer:WaitForChild("PlayerGui")
+
+-- Main Menu Frame
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 250, 0, 220)
+frame.Position = UDim2.new(0.5, -125, 0.3, 0)
+frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true 
+frame.Parent = screenGui
+
+local uiCorner = Instance.new("UICorner")
+uiCorner.CornerRadius = UDim.new(0, 10)
+uiCorner.Parent = frame
+
+-- Title
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 35)
+title.BackgroundTransparency = 1
+title.Text = "Select Target Player"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextSize = 16
+title.Font = Enum.Font.SourceSansBold
+title.Parent = frame
+
+-- Scrolling Frame for Players List
+local scrollingFrame = Instance.new("ScrollingFrame")
+scrollingFrame.Size = UDim2.new(0.9, 0, 0, 120)
+scrollingFrame.Position = UDim2.new(0.05, 0, 0.18, 0)
+scrollingFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+scrollingFrame.BorderSizePixel = 0
+scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollingFrame.ScrollBarThickness = 6
+scrollingFrame.Parent = frame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 4)
+listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = scrollingFrame
+
+-- Action Button (STOP)
+local actionButton = Instance.new("TextButton")
+actionButton.Size = UDim2.new(0.9, 0, 0, 35)
+actionButton.Position = UDim2.new(0.05, 0, 0.78, 0)
+actionButton.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+actionButton.BorderSizePixel = 0
+actionButton.Text = "STOP ATTACH"
+actionButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+actionButton.TextSize = 14
+actionButton.Font = Enum.Font.SourceSansBold
+actionButton.Visible = false
+actionButton.Parent = frame
+
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 5)
+buttonCorner.Parent = actionButton
+
+-- ==========================================
+-- ⚙️ CORE SYSTEM (FIXED BUG & ALIGNMENT)
+-- ==========================================
+local function stopFollowing()
+	if connection then
+		connection:Disconnect()
+		connection = nil
+	end
+	targetPlayer = nil
+	actionButton.Visible = false
+	
+	-- Restore physics normal states
+	local myChar = localPlayer.Character
+	local myHumanoid = myChar and myChar:FindFirstChildOfClass("Humanoid")
+	if myHumanoid then
+		myHumanoid.PlatformStand = false
+	end
+end
+
+local function startFollowing(chosenPlayer)
+	stopFollowing() -- Clean up previous session
+	targetPlayer = chosenPlayer
+	actionButton.Visible = true
+	
+	connection = RunService.RenderStepped:Connect(function()
+		local myChar = localPlayer.Character
+		local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
+		local myHumanoid = myChar and myChar:FindFirstChildOfClass("Humanoid")
+		
+		if not targetPlayer or not targetPlayer.Parent then
+			stopFollowing()
+			return
+		end
+		
+		local tChar = targetPlayer.Character
+		local tHead = tChar and tChar:FindFirstChild("Head")
+		
+		if myRoot and tHead and myHumanoid then
+			-- Fix warp back bug: Force state to PlatformStand to bypass physics engine conflicts
+			myHumanoid.PlatformStand = true
+			
+			-- Position: Get Target Head Position and drop down slightly to Neck level (0.8 studs lower than top head)
+			local targetPos = tHead.Position + Vector3.new(0, 0.5, 0) 
+			
+			-- Rotation: Keep character completely straight (upright), ignoring head tilt angle
+			myRoot.CFrame = CFrame.new(targetPos)
+			
+			-- Absolute physics freeze to stop rubberbanding/shaking
+			myRoot.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+			myRoot.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+		end
+	end)
+end
+
+actionButton.MouseButton1Click:Connect(stopFollowing)
+
+-- ==========================================
+-- 👥 DYNAMIC PLAYER LIST UPDATER
+-- ==========================================
+local function updatePlayerList()
+	-- Clear old buttons
+	for _, child in ipairs(scrollingFrame:GetChildren()) do
+		if child:IsA("TextButton") then
+			child:Destroy()
+		end
+	end
+	
+	-- Generate new buttons for active players
+	local count = 0
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= localPlayer then
+			count = count + 1
+			local pBtn = Instance.new("TextButton")
+			pBtn.Size = UDim2.new(0.95, 0, 0, 30)
+			pBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+			pBtn.BorderSizePixel = 0
+			pBtn.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+			pBtn.TextColor3 = Color3.fromRGB(230, 230, 230)
+			pBtn.TextSize = 13
+			pBtn.Font = Enum.Font.SourceSans
+			pBtn.Parent = scrollingFrame
+			
+			local btnRound = Instance.new("UICorner")
+			btnRound.CornerRadius = UDim.new(0, 4)
+			btnRound.Parent = pBtn
+			
+			pBtn.MouseButton1Click:Connect(function()
+				startFollowing(p)
+			end)
+		end
+	end
+	
+	scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, count * 34)
+end
+
+-- Refresh UI events
+Players.PlayerAdded:Connect(updatePlayerList)
+Players.PlayerRemoving:Connect(updatePlayerList)
+updatePlayerList()
